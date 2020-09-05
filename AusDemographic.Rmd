@@ -1,0 +1,381 @@
+---
+title: "Australian Demographic Study"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+# A1 Investigating the distribution of Indigenous Australian
+
+```{r installing packages, cache=TRUE, message=FALSE}
+install.packages(c('tidyverse', 'knitr'),repos = "http://cran.us.r-project.org")
+```
+
+```{r importing libraries, message=FALSE}
+library(tidyverse)
+library(knitr)
+```
+
+### A.) What regions have the maximum and minimum total Indigenous populations in 2016 and 2031?
+
+```{r import csv, message=FALSE}
+df1 <- read_csv('./Data1.csv')
+```
+Looking at data frame we see that values of Age column are somewhat inconsistent. For the years 5-9 and 10-14 we have their value as '5-Sept' and 'Oct-14'.
+We rectify this by mutating the Age column of df1.
+```{r}
+df1 <- df1 %>%
+mutate(Age = ifelse(as.character(Age) == 'Oct-14', '10-14', ifelse(as.character(Age) == '5-Sep', '5-9', as.character(Age))))
+```
+We change the name of Indigenous region column to avoid confusion and make it easier to refer.
+```{r}
+colnames(df1)[2] = 'Indigenous_Region_Names'
+```
+In order to find which region(s) has maximum, minimum population in year 2016 and 2031,
+we first filter the rows which have value for TIME column as 2016 or 2031. Then we group the df By columns Indigenous_Region_Names and TIME then take summary of value column.
+```{r, message=FALSE}
+total_pop_by_region <- df1 %>%
+filter(TIME==c(2016,2031)) %>%
+group_by(Indigenous_Region_Names, TIME) %>%
+summarise(pop=sum(Value))
+```
+After having gotten population value for each region by year 2016 and 2031, we filter the rows which represent either the max population or minimum population.
+```{r}
+total_pop_by_region %>%
+group_by(TIME) %>%
+filter(pop == max(pop) | pop == min(pop)) %>%
+kable(caption = 'Regions with max/min population')
+```
+
+### B.) What region/s have the maximum and minimum growth or decay rates of their total Indigenous population between 2016 and 2031?
+We already have population data for year 2016 and 2031 for all regions but its in wrong format.
+Now we'll tidy the df by applying pivot wider to make values of column TIME itself columns.
+```{r}
+pop_by_region_year <- total_pop_by_region %>%
+pivot_wider(names_from = TIME, values_from = pop)
+```
+Now we mutate columns 2016 and 2031 to create a new rate column to find growth/decay rates of all regions.
+Note that positive values in rate column mean growth and negative rate means decay.
+```{r}
+pop_by_region_year <- pop_by_region_year %>%
+mutate(rate = 100*(`2031` - `2016`)/(`2016`))
+```
+Now we filter the modified df to find states with max rate(max-growth) and min rate(max-decay).
+```{r}
+pop_by_region_year %>%
+ungroup() %>%
+filter(rate == max(rate) | rate == min(rate)) %>%
+kable(caption = 'States with highest growth/decay rates.')
+```
+
+### C.) Plot and describe the growth or decay of the total Indigenous populations for the capitals of the 8 state/territories across all time periods.
+We first create a character vector with all state capitals.
+```{r capitals vector}
+capitals = c('Melbourne', 'Sydney - Wollongong', 'Brisbane', 'Adelaide', 'Perth', 'Tasmania', 'Darwin', 'ACT')
+```
+Now we filter df1 to only have rows which have column values matching with capitals vector.
+Then we summarise the populations of these cities by City and Year values.
+```{r summarise city pops, message=FALSE}
+total_pop_by_region_year <- df1 %>%
+filter(Indigenous_Region_Names %in% capitals) %>%
+select(Indigenous_Region_Names,Age, TIME, Value) %>%
+group_by(Indigenous_Region_Names, TIME) %>%
+summarise(Value = sum(Value)) %>%
+ungroup()
+```
+Now we bring the df to our desired format to every year having its own column, so that its easier to calculate growth/decay rates.
+```{r}
+(capital_total_pop <- total_pop_by_region_year %>%
+pivot_wider(names_from = TIME, values_from = Value))
+```
+After pivoting the df wider, we apply nested loops which iterate through every column value for each row to calculate and replace it by that and following years' growth/decay rate.
+```{r}
+for(i in 1:nrow(capital_total_pop)){
+    for(j in 3:ncol(capital_total_pop)){
+        capital_total_pop[[i,j-1]] <- 100*(capital_total_pop[[i,j]] - capital_total_pop[[i,j-1]])/(capital_total_pop[[i,j-1]])
+    }
+}
+capital_total_pop
+```
+Since we can sum up value of 16 years in 15 cols we ditch year 2031.
+```{r}
+capital_total_pop <- subset(capital_total_pop, select = -`2031`)
+```
+Now that we have the required data, we again pivot longer so that its easier to visualise.
+```{r}
+(tidy_df <- capital_total_pop %>%
+pivot_longer(-1, names_to = 'year'))
+```
+We notice that the values of newly created year column are characters so we convert them into numeric so it'll help us in visualisation.
+```{r}
+tidy_df <- tidy_df %>% mutate(year = parse_number(year))
+```
+Now we pass the tidy df to ggplot to create a seperate line chart for each capital for every year from 2016 to 2031.
+```{r}
+tidy_df %>% ggplot(mapping = aes(x=year, y=value, group=1)) + geom_line() + facet_wrap(~Indigenous_Region_Names)
+```
+
+# A2. Investigating the Ages of Indigenous Australians
+### 1.) Using Data1, which region has the highest percentage of children in its total 2016 population?
+To calculate highest percentage of children population in year 2016, we first calculate popultion of all regions in year 2016.
+```{r, message=FALSE}
+region_total_pop_16 <- df1 %>%
+filter(TIME == 2016) %>%
+group_by(Indigenous_Region_Names) %>%
+summarise(total_pop = sum(Value))
+```
+Now we calculate children's population (<15 years) of all regions in year 2016.
+```{r, , message=FALSE}
+region_child_pop_16 <- df1 %>%
+filter(TIME == 2016, Age %in% c('0 - 4', '5-9', '10-14')) %>%
+group_by(Indigenous_Region_Names) %>%
+summarise(children_pop = sum(Value))
+```
+Now we take newly created children_pop column from region_child_pop_16 df and append it to region_total_pop_16 df.
+```{r}
+region_total_pop_16['child_pop'] <- region_child_pop_16$children_pop
+```
+Now we create a new column named percent_child which lists total percent of children population in each region and from that filter the region with max percentage.
+```{r}
+region_total_pop_16 %>%
+mutate(percent_child = (child_pop/total_pop)*100) %>%
+filter(percent_child == max(percent_child)) %>%
+kable(caption = 'State with highest percent of children population.')
+```
+### 2.) which state or territory has the highest percentage of children in its total 2006, 2016 and 2031 populations.
+```{r, message=FALSE}
+df2 <- read_csv('./Data2.csv')
+```
+To calculate state/territory with highest children population in years 2006,2016,2031 we first calculate children population of all states in prescribed years.
+```{r, message=FALSE}
+(child_pop_by_state <- df2 %>%
+select('State','Age','2006', '2016', '2031') %>%
+filter(Age %in% c('0','1','2','3','4','5','6','7','8','9','10','11','12','13','14')) %>%
+group_by(State) %>%
+summarise(child_total_06 = sum(`2006`),child_total_16 = sum(`2016`),child_total_31 = sum(`2031`)))
+```
+Now we calculate total population of these states in aforementioned years.
+```{r, message=FALSE}
+(total_pop_by_state <- df2 %>%
+select('State', 'Age', '2006', '2016', '2031') %>%
+group_by(State) %>%
+summarise(total_06 = sum(`2006`), total_16 = sum(`2016`), total_31 = sum(`2031`)))
+```
+Now we append 2006,2016 and 2031 population columns from child df to total population df.
+```{r}
+total_pop_by_state[c('child_total_06', 'child_total_16', 'child_total_31')] <- child_pop_by_state[c('child_total_06', 'child_total_16', 'child_total_31')]
+```
+Now we create new child percent columns by manipulating existing columns and filter the rows with values which are either highest in 2006,2016 or 2031 column.
+```{r}
+total_pop_by_state %>%
+transmute(State, percent_2006 = 100 * child_total_06/total_06, percent_2016 = 100 * child_total_16/total_16, percent_2031 = 100 * child_total_31/total_31) %>%
+filter(percent_2006 == max(percent_2006) | percent_2016 == max(percent_2016) | percent_2031 == max(percent_2031)) %>%
+kable(caption = 'States with highest percentage of child population in total population.')
+```
+### 3.) Use R to build a Motion Chart comparing the total Indigenous Australian population of each region to the percentage of Indigenous Australian children in each state/territory.
+```{r, cache=TRUE, , message=FALSE}
+install.packages('googleVis',repos = "http://cran.us.r-project.org")
+```
+```{r, , message=FALSE}
+library(googleVis)
+```
+Motion chart compares total population of each region to percentage of children population in each states.
+First we calculate total population of each region by year.
+```{r, message=FALSE}
+(region_total_pop_16_to_31 <- df1 %>% group_by(Indigenous_Region_Names, TIME) %>% summarise(pop = sum(Value)))
+```
+
+We have predicted population data from year 2006 to 2031 but since the data for total population of region is only available from year 2016, we will take predicted population data of states from year 2016 as well.
+The states population data is not in same format as the regional population data, therefore we'll use pivot longer to bring them into same format and calculate states total population for each year from 2016 to 2031.
+
+```{r, message=FALSE}
+(states_total_pop_16_to_31 <- df2 %>%
+arrange(State) %>%
+select(1,2,13:28) %>%
+pivot_longer(-c(1,2), names_to = 'Year') %>%
+group_by(State, Year) %>%
+summarise(total = sum(value)))
+```
+Now we calculate states children's population data in the same way as above and also add an additional filter to include rows with Age<15.
+```{r, message=FALSE}
+(states_child_pop_16_to_31 <- df2 %>%
+arrange(State) %>%
+select(1,2,13:28) %>%
+filter(Age %in% c('0','1','2','3','4','5','6','7','8','9','10','11','12','13','14')) %>%
+pivot_longer(-c(1,2), names_to = 'year', values_to = 'pop') %>%
+group_by(State, year) %>%
+summarise(pop = sum(pop)))
+```
+
+Now we add states children pop column to states total pop df in order to calculate children percent population from year 2016 to 2031.
+```{r}
+states_total_pop_16_to_31['total child pop'] <- states_child_pop_16_to_31['pop']
+```
+
+Now we calculate percent children pop for each state for each year from 2016 to 2031
+```{r, message=FALSE}
+(states_child_percent_16_to_31 <- states_total_pop_16_to_31 %>%
+group_by(State, Year) %>%
+summarise('percent child' = 100*(`total child pop`)/`total`))
+```
+
+Now we have region population data for years as well as states child percent population data but in order to make any sense out of these two we need to first find a way to connect these two df together so that we can draw further conclusions i.e. assign each region a state and its corresponding child percent population data.
+Therefore we create a vector containing states names to which region belong in the same order as they appear in regional data.
+```{r}
+states_vec <- c('ACT', 'SA', 'NT', 'NT', 'QLD', 'WA','QLD','QLD', 'NT', 'NSW', 'WA', 'NT', 'WA', 'NT', 'WA', 'Vic', 'QLD', 'NT', 'NSW','NSW','NSW','WA','SA', 'SA', 'NSW', 'QLD', 'WA', 'NSW', 'WA', 'NSW', 'Tas', 'NT', 'QLD','QLD','QLD','Vic','WA')
+```
+Now we know that regional data contains population value of each region from year 2016 to 2031 i.e. 16 years and since it is sorted by region names in alphabetical order we repeat each value in states vector 16 times to match their dimensions.
+```{r}
+states_vec <- rep(states_vec, each = 16)
+```
+We add states vector as a column to regional data.
+```{r}
+region_total_pop_16_to_31['State'] <- states_vec
+```
+We change column name in regional data so that we can merge the two dfs.
+```{r}
+colnames(region_total_pop_16_to_31)[2] <- 'Year'
+```
+Now we merge regional data df with states data df based on Year and state column values.
+```{r}
+merged_df <- merge(region_total_pop_16_to_31, states_child_percent_16_to_31, by = c('Year', 'State')) %>%
+arrange(State)
+head(merged_df)
+```
+Now we create a motion chart with region names as id vars and Year as time var.
+```{r, message=FALSE}
+motion_chart = gvisMotionChart(merged_df, idvar = 'Indigenous_Region_Names', timevar = 'Year', sizevar = 'pop', colorvar = 'State')
+plot(motion_chart)
+```
+Note that motion chart can't be shown in .Rmd documents.
+In order to see the motion chart open this document in R studio and then manually run it.
+
+### 4.) Using the Motion Chart, answer the following questions
+#### A.) Which region’s population overtakes that of another region in the same state/territory? In which year/s does this happen?
+As per our findings, no regions population overtakes any other regions population which belongs to same state as the former. However some comes close but no one ever overtakes.
+
+#### B.) Is there generally a relationship between the Indigenous Australian population size and percentage of children in the population? If so, what kind of relationship?
+We see from the motion graph that as the population of a region increases we see a decline in percent child population of that region.
+
+#### C.) Colour is commonly used in data visualisation to help understand data. Which aspect of this data would you use colour for in your plot and why?
+We used state variable to color the observations as it makes it easy for us to interpret the graph and helps understand the how change in one variable reflects in another variable for all regions belonging to same state.
+
+#### D.) Are there any other interesting things you notice in the data or any changes you would recommend for the Motion Chart?
+For cities with lower population i.e. < 20000 we see that as the time progress, there's a substantial decrease in child percent in total population but no noteworthy increase in total population whatsoever. I.e. for the State of Northern Territory, we see that in 2016 children percent in total pop was approximately 30% whereas in 2031, it falls down to be 23% which almost negligible increase in population.
+
+# B1 - Investigating the Ages of Indigenous Australians (Values and Variables)
+
+```{r}
+library(tidyverse)
+```
+
+```{r, warning=FALSE, message=FALSE}
+df3 <- read_csv('./Data3.csv')
+```
+
+
+Remove extra columns at the very right.
+```{r}
+df3 <- subset(df3, select = -c(X13, X14, X15, X16))
+```
+We see that rows containing Indigenous Australian values are of data type character.
+So we convert them into numeric.
+Upon further investigation we find that some missing data was present in this column but instead of having NA as their value, it was NP.
+```{r, warning=FALSE}
+df3 <- df3 %>% mutate(`Number of registered IndigAus  children` = parse_number(`Number of registered IndigAus  children`),
+`Number IndigAus fully immunised` = parse_number(`Number IndigAus fully immunised`),
+`Number IndigAus not fully immunised` = parse_number(`Number IndigAus not fully immunised`))
+```
+### 1.) How many PHN areas does the data cover?
+```{r}
+length(unique(df3$`PHN area name`))
+```
+### 2.) What are the possible values for 'PHN code'?
+```{r}
+unique(df3$`PHN code`)
+```
+### 3.) For each row, calculate the percentage of Australian children that are fully immunised (this is the immunisation rate). What are the average, maximum and minimum immunisation rates? Calculate the same for the group that are Indigenous Australian children.
+In order to find immunistaion rates, we create two new columns by modifying existing columns. For rows with missing values, we exclude those rows.
+```{r}
+(immunisation_rates_df <- df3 %>%
+mutate(immunisation_rate = 100*(`Number fully immunised`)/`Number of registered children`,
+indig_immunisation_rates = 100*(`Number IndigAus fully immunised`)/`Number of registered IndigAus  children`,
+na.exclude = T) %>%
+subset(select = -c(na.exclude)))
+```
+From the processed data frame, we now calculate mean/max/min immunisation rates for both indigenous and all australian children.
+```{r}
+immunisation_rates_df %>%
+summarise(avg_immunisation_rate = mean(immunisation_rate),
+max_im_rate = max(immunisation_rate),
+min_im_rate = min(immunisation_rate),
+avg_indig_im_rate = mean(indig_immunisation_rates, na.rm = T),
+max_indig_im_rate = max(indig_immunisation_rates, na.rm = T),
+min_indig_im_rate = min(indig_immunisation_rates, na.rm = T)) %>%
+kable(caption = 'Max/Min/Mean Immunisation rates')
+```
+# B2.) Variation in rates over Time, Age and Location
+Overall Immunisation rate VS Age and Year
+```{r}
+ggplot(data=immunisation_rates_df, mapping = aes(x = `Age group`, y = `immunisation_rate`, fill=`Age group`)) +
+geom_boxplot() +
+facet_wrap(~`Reporting Year`) +
+geom_jitter(color="blue", size=0.7, alpha=0.5)
+```
+Indigenous Immunisation rates VS Age and Year
+```{r, warning=FALSE}
+ggplot(data=immunisation_rates_df, mapping = aes(x = `Age group`, y = `indig_immunisation_rates`, fill=`Age group`)) +
+geom_boxplot() +
+facet_wrap(~`Reporting Year`) +
+geom_jitter(color="blue", size=0.7, alpha=0.5)
+```
+
+### 1.) Have the immunisation rates improved over time? Are the median immunisation rates increasing, decreasing or staying the same?
+Looking at the box plot we confirm that overall immunisation rates have improved for both Indigenous and all australian children.
+
+### 2.) How do the immunisation rates vary with the age of the child?
+We infer from the graph that immunisation rates for 1 and 5 year old children have seen a steady increase whereas for 2 year old children, immunisation rates have dropped.
+
+Overall Immunisation rate vs Area and State
+```{r}
+immunisation_rates_df %>%
+group_by(`State`,`PHN area name`) %>%
+ggplot(mapping = aes(x = `PHN area name`, y = `immunisation_rate`)) +
+geom_boxplot() +
+facet_wrap(~`State`) +
+geom_jitter(color="blue", size=0.7, alpha=0.3) +
+theme(legend.position = "none") +
+theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+Indigenous Immunisation rate vs Area and State
+```{r, warning=FALSE}
+immunisation_rates_df %>%
+group_by(`State`,`PHN area name`) %>%
+ggplot(mapping = aes(x = `PHN area name`, y = `indig_immunisation_rates`)) +
+geom_boxplot() +
+facet_wrap(~`State`) +
+geom_jitter(color="blue", size=0.7, alpha=0.3) +
+theme(legend.position = "none") +
+theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+### 3.)  What is the median rate per state/territory?
+```{r, message=FALSE}
+immunisation_rates_df %>% 
+select(1,2,3,4,13,14) %>% 
+group_by(`State`) %>% 
+summarise('imm rate'= median(immunisation_rate), 'indig imm rate' = median(indig_immunisation_rates)) %>%
+kable(caption = 'Median immunisation rates per territory')
+```
+### 4.) Which states or territories seem most consistent in their immunisation rates?
+```{r, message=FALSE}
+immunisation_rates_df %>% select(1,2,3,4,13,14) %>%
+group_by(`State`, `PHN area name`) %>% 
+arrange(State, `PHN area name`) %>% 
+summarise('imm rate'= median(immunisation_rate, na.rm = T), 'indig imm rate' = median(indig_immunisation_rates, na.rm = T))
+```
+
+
