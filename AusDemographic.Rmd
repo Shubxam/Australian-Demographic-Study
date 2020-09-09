@@ -20,6 +20,13 @@ library(knitr)
 ```{r import csv, message=FALSE}
 df1 <- read_csv('./Data1.csv')
 ```
+
+We check for missing values in our df.
+```{r}
+sum(is.na(df1))
+```
+
+
 Looking at data frame we see that values of Age column are somewhat inconsistent. For the years 5-9 and 10-14 we have their value as '5-Sept' and 'Oct-14'.
 We rectify this by mutating the Age column of df1.
 ```{r}
@@ -145,6 +152,11 @@ kable(caption = 'State with highest percent of children population.')
 ```{r, message=FALSE}
 df2 <- read_csv('./Data2.csv')
 ```
+We check for missing values in our df.
+```{r}
+sum(is.na(df2))
+```
+
 To calculate state/territory with highest children population in years 2006,2016,2031 we first calculate children population of all states in prescribed years.
 ```{r, message=FALSE}
 (child_pop_by_state <- df2 %>%
@@ -348,7 +360,9 @@ theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank())
 ```
+
 Indigenous Immunisation rate vs Area and State
+
 ```{r, warning=FALSE}
 immunisation_rates_df %>%
 group_by(`State`,`PHN area name`) %>%
@@ -363,6 +377,7 @@ theme(axis.title.x=element_blank(),
 ```
 
 ### 3.)  What is the median rate per state/territory?
+Immunisation data of indigenous australians for some states wasn't available in dataset therefore we've NA values for them.
 ```{r, message=FALSE}
 immunisation_rates_df %>% 
 select(1,2,3,4,13,14) %>% 
@@ -375,7 +390,27 @@ kable(caption = 'Median immunisation rates per territory')
 immunisation_rates_df %>% select(1,2,3,4,13,14) %>%
 group_by(`State`, `PHN area name`) %>% 
 arrange(State, `PHN area name`) %>% 
-summarise('imm rate'= median(immunisation_rate, na.rm = T), 'indig imm rate' = median(indig_immunisation_rates, na.rm = T))
+summarise('imm rate'= median(immunisation_rate, na.rm = T), 'indig imm rate' = median(indig_immunisation_rates, na.rm = T)) %>%
+ungroup() %>%
+kable()
 ```
+Looking at the table above, we can tell that State of Victoria is most consistent with their immunisation rates.
 
+# References
+
+- Tidyverse Documentation <https://tidyverse.tidyverse.org/>
+
+- knitr <https://yihui.org/knitr/>
+
+- Pivoting dataframes <https://tidyr.tidyverse.org/articles/pivot.html>
+
+- Subsetting dataframes <https://www.r-bloggers.com/5-ways-to-subset-a-data-frame-in-r/>
+
+- ggplot example gallery <https://exts.ggplot2.tidyverse.org/gallery/>
+
+- GoogleVis Examples <https://cran.r-project.org/web/packages/googleVis/vignettes/googleVis_examples.html>
+
+- Repeat Vector elements <https://www.dummies.com/programming/r/how-to-repeat-vectors-in-r/>
+
+- Rmd Documentation <https://rmarkdown.rstudio.com/lesson-1.html>
 
